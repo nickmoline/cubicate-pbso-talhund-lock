@@ -299,6 +299,25 @@
             gap: 8px;
             cursor: pointer;
         }
+        
+        footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            text-align: center;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            font-size: 0.8rem;
+        }
+
+        footer a {
+            color: rgb(123, 175, 253);
+        }
+        footer a:hover {
+            color: rgb(72, 74, 247);
+        }
     </style>
 </head>
 <body>
@@ -358,6 +377,10 @@
             <input type="checkbox" id="debugMode"> Show Debug Sectors
         </label>
     </div>
+
+    <footer>
+        <p>Created by <a href="https://nickmoline.com">Nick Moline</a>, using an image created by <a href="https://www.reddit.com/user/golden-phlox/">Golden Phlox</a> shared on <a href="https://www.dmsguild.com/en/product/516620/unlocking-the-crypt-of-talhund-puzzle-the-shattered-obelisk">DMSGuild</a>.  You can find the source code on <a href="https://github.com/nickmoline/cubicate-pbso-talhund-lock">GitHub</a>.</p>
+    </footer>
 
     <script>
         const NUM_SYMBOLS = 14;
