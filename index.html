@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypt of the Talhund Lock</title>
+    <style>
+        :root {
+            /* Adjust this to change the overall size of the lock on screen */
+            --ring-size: 600px;
+            
+            /* Adjust this percentage until the masking perfectly separates the inner/outer rings */
+            --clip-radius: 36%; 
+            
+            --glow-radius: 175px; /* Adjust if the green glow circles are not perfectly centered over the symbols */
+            --glow-size: 70px;    /* How wide the green glow circle is */
+            
+            --glow-color: transparent;
+            --image-url: url('cryptlock-raw.jpeg');
+            
+            --bg-color: #1a1a1a;
+            /* How many pixels of the image's outer white background to mask over */
+            --white-border-thickness: 27px; 
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: var(--bg-color);
+            color: white;
+            font-family: sans-serif;
+            flex-direction: column;
+            margin: 0;
+            overflow: hidden; /* Prevent scrolling if image is large */
+        }
+
+        .lock-container {
+            position: relative;
+            width: var(--ring-size);
+            height: var(--ring-size);
+            border-radius: 50%;
+        }
+
+        /* The Outer Ring (Fixed Background) */
+        .outer-ring {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: var(--image-url);
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+            border-radius: 50%;
+        }
+
+        /* The Inner Ring (Rotates) */
+        .inner-ring {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: var(--image-url);
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+            border-radius: 50%;
+            
+            /* This single line is what visually separates the inner ring from the outer ring! */
+            clip-path: circle(var(--clip-radius) at 50% 50%);
+            
+            /* Smooth rotation animation */
+            transition: transform 0.8s cubic-bezier(0.25, 0.1, 0.25, 1);
+            transform: rotate(0deg);
+        }
+        
+        /* Mask to cover the white artifact edges of the jpeg */
+        .white-border-mask {
+            position: absolute;
+            top: -4px; left: -4px;
+            width: calc(100% + 8px); height: calc(100% + 8px);
+            border-radius: 50%;
+            pointer-events: none; /* Let clicks pass through */
+            box-sizing: border-box;
+            /* Use a thick physical border instead of an inset shadow to block the white edge */
+            border: calc(var(--white-border-thickness) + 4px) solid var(--bg-color);
+            /* The overall success/failure glow now originates from inside this thick border */
+            box-shadow: inset 0 0 40px var(--glow-color);
+            transition: box-shadow 0.3s ease;
+            z-index: 5; /* Above rings, below sectors and gemstone */
+        }
+
+        /* Overlay container for the invisible click sectors */
+        .interaction-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            /* ensures you can't click outside the inner ring area */
+            clip-path: circle(var(--clip-radius) at 50% 50%);
+        }
+
+        /* Marker that rotates with the inner ring and highlights correctly selected symbols */
+        .symbol-glow {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: var(--glow-size);
+            height: var(--glow-size);
+            margin-top: calc(var(--glow-size) / -2);
+            margin-left: calc(var(--glow-size) / -2);
+            border-radius: 50%;
+            pointer-events: none; 
+            
+            /* Green glow styling */
+            opacity: 0;
+            box-shadow: 0 0 20px 5px rgba(0, 255, 0, 0.8), inset 0 0 15px 5px rgba(0, 255, 0, 0.5);
+            background-color: rgba(0, 255, 0, 0.2);
+            border: 0px solid rgba(0, 255, 0, 0.6);
+            transition: opacity 0.4s ease;
+            
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .symbol-glow.active {
+            opacity: 1;
+        }
+        
+        /* The center recess where the gemstone goes */
+        .center-recess {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 96px;
+            height: 96px;
+            transform: translate(-50%, -50%);
+            /* Empty container now, relies on the background image */
+            z-index: 15;
+        }
+
+        /* The insertable faceted gemstone */
+        .center-gemstone {
+            position: absolute;
+            top: calc(50% - 41px);
+            left: 50%;
+            width: 96px;
+            height: 84px;
+            transform: translate(-50%, -50%) scale(1.5) translateY(-250px); /* Starts large and floated above the puzzle */
+            
+            cursor: pointer;
+            z-index: 30;
+            transition: transform 0.8s cubic-bezier(0.25, 0.1, 0.25, 1), opacity 0.3s ease;
+            
+            /* Hidden until a color is selected */
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .center-gemstone.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        
+        .center-gemstone svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+            /* SVG defines the shape completely now */
+            filter: drop-shadow(0 0 10px rgba(0,0,0,0.5));
+            transition: filter 0.3s ease;
+        }
+        
+        /* The SVG paths that draw the facets */
+        .gem-facet {
+            stroke: rgba(255, 255, 255, 0.7);
+            stroke-width: 1.5;
+            transition: fill 0.3s ease, stroke 0.3s ease;
+        }
+        .gem-facet-inner {
+            fill: rgba(255, 255, 255, 0.3); /* slightly lighter inner face */
+        }
+        .gem-facet-outer {
+            fill: rgba(255, 255, 255, 0.1); /* darker outer faces for depth */
+        }
+
+        .center-gemstone.inserted {
+            transform: translate(-50%, -50%) scale(1) translateY(0);
+            cursor: default;
+        }
+        
+        /* Color mapping via CSS variables applied to the SVG */
+        .color-white svg { filter: drop-shadow(0 0 15px rgba(255, 255, 255, 0.8)); }
+        .color-white .gem-facet-inner { fill: rgba(255, 255, 255, 0.4); }
+        .color-white .gem-facet-outer { fill: rgba(230, 230, 240, 0.2); }
+        
+        .color-blue svg { filter: drop-shadow(0 0 15px rgba(0, 85, 255, 0.8)); }
+        .color-blue .gem-facet-inner { fill: rgba(0, 100, 255, 0.5); }
+        .color-blue .gem-facet-outer { fill: rgba(0, 50, 180, 0.3); }
+        
+        .color-red svg { filter: drop-shadow(0 0 15px rgba(255, 0, 50, 0.8)); }
+        .color-red .gem-facet-inner { fill: rgba(255, 30, 80, 0.5); }
+        .color-red .gem-facet-outer { fill: rgba(180, 0, 30, 0.3); }
+        
+        .color-green svg { filter: drop-shadow(0 0 15px rgba(0, 255, 100, 0.8)); }
+        .color-green .gem-facet-inner { fill: rgba(20, 200, 80, 0.5); }
+        .color-green .gem-facet-outer { fill: rgba(0, 120, 40, 0.3); }
+        
+        .color-yellow svg { filter: drop-shadow(0 0 15px rgba(255, 180, 0, 0.8)); }
+        .color-yellow .gem-facet-inner { fill: rgba(255, 200, 0, 0.5); }
+        .color-yellow .gem-facet-outer { fill: rgba(180, 120, 0, 0.3); }
+        
+        .color-purple svg { filter: drop-shadow(0 0 15px rgba(180, 0, 255, 0.8)); }
+        .color-purple .gem-facet-inner { fill: rgba(150, 50, 255, 0.5); }
+        .color-purple .gem-facet-outer { fill: rgba(80, 0, 150, 0.3); }
+        
+        .color-turquoise svg { filter: drop-shadow(0 0 15px rgba(0, 220, 255, 0.8)); }
+        .color-turquoise .gem-facet-inner { fill: rgba(0, 200, 230, 0.5); }
+        .color-turquoise .gem-facet-outer { fill: rgba(0, 120, 150, 0.3); }
+        
+        .color-lightblue svg { filter: drop-shadow(0 0 15px rgba(100, 240, 255, 0.8)); }
+        .color-lightblue .gem-facet-inner { fill: rgba(150, 240, 255, 0.5); }
+        .color-lightblue .gem-facet-outer { fill: rgba(50, 180, 200, 0.3); }
+
+        /* Individual pie-slice sectors for clicking */
+        .sector {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 80px; /* Width of the clickable area */
+            height: 48%; /* Reaches from center to the clip edge */
+            transform-origin: top center;
+            cursor: pointer;
+            z-index: 10;
+        }
+        
+        /* Debug styles to visualize the invisible sectors */
+        .sector-debug {
+            /* Kept class empty in case we want to re-add visible bounds later, 
+               but removed the red background and white borders as requested */
+            box-sizing: border-box;
+        }
+
+        /* Debug rotating numbers */
+        .id-label {
+            display: none; /* hidden by default */
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 60px; /* Slightly wider to ensure numbers don't wrap */
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            color: #0f0; 
+            text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000;
+            pointer-events: none;
+        }
+        
+        /* The lock container gets this class when debug mode is ON */
+        .debug-mode-active .id-label {
+            display: block;
+        }
+
+        .controls {
+            margin-top: 40px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            z-index: 20;
+        }
+        
+        #progress {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+        
+        button {
+            padding: 10px 20px;
+            font-size: 1.1rem;
+            cursor: pointer;
+            background: #444;
+            color: white;
+            border: 2px solid #666;
+            border-radius: 6px;
+            transition: background 0.2s;
+        }
+        button:hover { background: #555; }
+        
+        .debug-label {
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="lock-container" id="lockContainer">
+        <!-- The static fixed arrow ring -->
+        <div class="outer-ring"></div>
+        
+        <!-- The rotating inner symbols ring -->
+        <div class="inner-ring" id="innerRing"></div>
+        
+        <!-- Covers up the stark white background of the image with the body color -->
+        <div class="white-border-mask"></div>
+        
+        <!-- Invisible clickable regions overlaying the symbols -->
+        <div class="interaction-overlay" id="overlay"></div>
+        
+        <!-- Center Recess -->
+        <div class="center-recess"></div>
+    </div>
+    
+    <!-- The Gemstone (Starts outside the lock container visually) -->
+    <div class="center-gemstone" id="gemstone" title="Click to insert gemstone">
+        <!-- SVG drawing the facets. Adjusted to 100x100 grid for 1:1 ratio. 
+             Outer hexagon: (25,0), (75,0), (100,50), (75,100), (25,100), (0,50)
+             Inner hexagon: (37.5,25), (62.5,25), (75,50), (62.5,75), (37.5,75), (25,50) -->
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Center flat facet -->
+            <polygon class="gem-facet gem-facet-inner" points="37.5,25 62.5,25 75,50 62.5,75 37.5,75 25,50" />
+            <!-- Outer slope facets -->
+            <polygon class="gem-facet gem-facet-outer" points="25,0 75,0 62.5,25 37.5,25" />
+            <polygon class="gem-facet gem-facet-outer" points="75,0 100,50 75,50 62.5,25" />
+            <polygon class="gem-facet gem-facet-outer" points="100,50 75,100 62.5,75 75,50" />
+            <polygon class="gem-facet gem-facet-outer" points="75,100 25,100 37.5,75 62.5,75" />
+            <polygon class="gem-facet gem-facet-outer" points="25,100 0,50 25,50 37.5,75" />
+            <polygon class="gem-facet gem-facet-outer" points="0,50 25,0 37.5,25 25,50" />
+        </svg>
+    </div>
+
+    <div class="controls">
+        <div id="progress">Stage: 0 / 14</div>
+        <button id="resetBtn">Reset Lock</button>
+        
+        <select id="gemColorSelect" style="padding: 8px; border-radius: 4px; background: #333; color: white;">
+            <option value="">-- No Gemstone --</option>
+            <option value="color-white">White (Diamond)</option>
+            <option value="color-blue">Blue (Sapphire)</option>
+            <option value="color-red">Red (Ruby)</option>
+            <option value="color-green">Green (Emerald)</option>
+            <option value="color-yellow">Yellow (Amber)</option>
+            <option value="color-purple">Purple (Amethyst)</option>
+            <option value="color-turquoise">Turquoise (Blue Topaz)</option>
+            <option value="color-lightblue">Light Blue (Aquamarine)</option>
+        </select>
+        
+        <label class="debug-label">
+            <input type="checkbox" id="debugMode"> Show Debug Sectors
+        </label>
+    </div>
+
+    <script>
+        const NUM_SYMBOLS = 14;
+        const ANGLE_PER_SYMBOL = 360 / NUM_SYMBOLS; // ~25.71 degrees
+        
+        // Internal sector calibration offsets for rotational alignment
+        const _sectorCalibration = '6c19427db83a50';
+        const CORRECT_SEQUENCE = [..._sectorCalibration].map(c => parseInt(c, 16));
+        const NUM_REQUIRED_STEPS = CORRECT_SEQUENCE.length;
+
+        let currentStep = 0;
+        let currentRotation = 0; 
+        let isAnimating = false;
+        let isGemstoneInserted = false;
+
+        const innerRing = document.getElementById('innerRing');
+        const lockContainer = document.getElementById('lockContainer');
+        const overlay = document.getElementById('overlay');
+        const progressEl = document.getElementById('progress');
+        const debugCheckbox = document.getElementById('debugMode');
+        const gemstone = document.getElementById('gemstone');
+        const gemColorSelect = document.getElementById('gemColorSelect');
+        
+        // Handle gemstone color changing
+        gemColorSelect.addEventListener('change', (e) => {
+            const selectedColor = e.target.value;
+            
+            // If they picked "No Gemstone"
+            if (!selectedColor) {
+                gemstone.classList.remove('visible');
+                // Revert insertion if it was inserted
+                if (isGemstoneInserted) {
+                    gemstone.classList.remove('inserted');
+                    gemstone.style.transform = '';
+                    isGemstoneInserted = false;
+                    progressEl.textContent = `Stage: ${currentStep} / ${NUM_REQUIRED_STEPS}`;
+                }
+                return;
+            }
+            
+            // Otherwise, show it and set the color
+            gemstone.classList.add('visible');
+            
+            // Remove all specific color classes
+            gemstone.classList.remove('color-white', 'color-blue', 'color-red', 'color-green', 'color-yellow', 'color-purple', 'color-turquoise', 'color-lightblue');
+            // Add the selected one
+            gemstone.classList.add(selectedColor);
+        });
+
+        // Gemstone insertion logic
+        gemstone.addEventListener('click', () => {
+            if (!isGemstoneInserted) {
+                gemstone.classList.add('inserted');
+                // Ensure it spins to align with current ring rotation as it inserts
+                gemstone.style.transform = `translate(-50%, -50%) rotate(${currentRotation}deg)`;
+                isGemstoneInserted = true;
+                progressEl.textContent = `Stage: 0 / ${NUM_REQUIRED_STEPS}`;
+            }
+        });
+
+        // 1. Generate the 14 interactive sectors
+        // Sector 0 is at the top (0 degrees).
+        for (let i = 0; i < NUM_SYMBOLS; i++) {
+            const sector = document.createElement('div');
+            sector.className = 'sector';
+            
+            // Math to position sectors in a circle pointing outwards from center
+            const angle = i * ANGLE_PER_SYMBOL;
+            
+            // Rotate the sector by the angle. 
+            // translateX(-50%) centers it horizontally before rotating because transform-origin is top center
+            // rotate(180deg) flips it so it points outwards
+            sector.style.transform = `translateX(-50%) rotate(${angle + 180}deg)`;
+            
+            // Add ID for logic
+            sector.dataset.id = i;
+            
+            // Add click event
+            sector.addEventListener('click', () => handleSectorClick(i));
+            overlay.appendChild(sector);
+            
+            // Generate glowing marker inside the rotating inner ring so it rotates with the symbol
+            const glow = document.createElement('div');
+            glow.className = 'symbol-glow';
+            glow.id = `glow-${i}`;
+            // The original logic positions the glow perfectly over the symbols
+            glow.style.transform = `rotate(${angle}deg) translateY(calc(-1 * var(--glow-radius)))`;
+            innerRing.appendChild(glow);
+            
+            // Create a dedicated container for the debug label that rotates around the center 
+            // the same way the symbols and click sectors do.
+            const labelEl = document.createElement('div');
+            labelEl.className = 'id-label';
+            labelEl.textContent = i;
+            
+            // We use the same negative translateY to push it out to the symbol radius (slightly further inward)
+            // Let's use a dynamic CSS transform. 
+            // We use translate(-50%, -50%) FIRST to ensure the exact center of the 60px wide label is at the center of the lock.
+            // THEN we rotate it by angle (removing the +180 bug that sent it to the wrong side of the lock).
+            // THEN we push it outward by 130px.
+            labelEl.style.transform = `translate(-50%, -50%) rotate(${angle}deg) translateY(-130px)`;
+            
+            innerRing.appendChild(labelEl);
+        }
+
+        // 2. Logic to handle user clicking a sector
+        function handleSectorClick(clickedSectorId) {
+            // Must insert gemstone first!
+            if (!isGemstoneInserted) {
+                return;
+            }
+            
+            // Prevent multiple clicks while animation is running or if finished
+            if (isAnimating || currentStep >= NUM_REQUIRED_STEPS) return;
+            
+            isAnimating = true;
+
+            // `clickedSectorId` represents which physical slice of the pie was clicked (0 is always top).
+            // Since the ring rotates, the symbol physically under slice '0' changes!
+            
+            // Our goal is to rotate the ring so the clicked sector ends up at the top (position 0).
+            // If the user clicks fixed sector 3 (approx 77 degrees clockwise),
+            // we need to rotate the ring -77 degrees (counter-clockwise) to bring that symbol to the top.
+            
+            // Calculate where we want to end up (modulo 360) to bring the clicked sector to the top
+            let rawTargetRotation = currentRotation - (clickedSectorId * ANGLE_PER_SYMBOL);
+            
+            // Combination Lock mechanics: Alternating rotation direction!
+            // Step 0 = Clockwise, Step 1 = Counter-Clockwise, Step 2 = Clockwise, etc.
+            const isClockwise = (currentStep % 2 === 0);
+            
+            if (isClockwise) {
+                // Must rotate Clockwise (CSS rotation strictly increases to be positive direction)
+                while (rawTargetRotation <= currentRotation) {
+                    rawTargetRotation += 360;
+                }
+            } else {
+                // Must rotate Counter-Clockwise (CSS rotation strictly decreases)
+                while (rawTargetRotation >= currentRotation) {
+                    rawTargetRotation -= 360;
+                }
+            }
+            
+            // Apply the strictly directional rotation target
+            currentRotation = rawTargetRotation;
+            
+            innerRing.style.transform = `rotate(${currentRotation}deg)`;
+            gemstone.style.transform = `translate(-50%, -50%) rotate(${currentRotation}deg)`;
+
+            // To validate, we need to know the ORIGINAL ID of the symbol that is now at the top (0 degrees).
+            // If the ring is rotated by 'currentRotation' degrees, 
+            // the symbol originally at position Y has visually moved by +currentRotation degrees.
+            // We want the symbol where (Y + currentRotation) = 0.
+            // Therefore, Y = -currentRotation.
+            
+            // Convert exact degrees back to an index (0-13)
+            let selectedOriginalSymbolId = Math.round((-currentRotation / ANGLE_PER_SYMBOL));
+            
+            // Handle negative numbers to wrap around correctly (e.g. -1 becomes 13)
+            selectedOriginalSymbolId = ((selectedOriginalSymbolId % NUM_SYMBOLS) + NUM_SYMBOLS) % NUM_SYMBOLS;
+
+            console.log(`Clicked sector: ${clickedSectorId}, Target Rotation: ${rawTargetRotation}deg`);
+            console.log(`Symbol now at top has original ID: ${selectedOriginalSymbolId}`);
+
+            // Wait for the CSS transition to finish (.8s = 800ms) before validating
+            setTimeout(() => {
+                validateSelection(selectedOriginalSymbolId);
+            }, 800); 
+        }
+
+        // 3. Logic to validate if they picked the right symbol in the sequence
+        function validateSelection(selectedId) {
+            const expectedId = CORRECT_SEQUENCE[currentStep];
+            
+            if (selectedId === expectedId) {
+                // CORRECT SELECTION!
+                currentStep++;
+                updateProgress();
+                
+                // Activate the permanent glow marker for this specific symbol!
+                const glowEl = document.getElementById(`glow-${selectedId}`);
+                if (glowEl) {
+                    glowEl.classList.add('active');
+                }
+                
+                isAnimating = false; // Allow next click
+                
+                // Check if they won
+                if (currentStep >= NUM_REQUIRED_STEPS) {
+                    setTimeout(() => {
+                        // Permanent outer green glow when the whole puzzle is won
+                        lockContainer.style.setProperty('--glow-color', 'rgba(0, 255, 0, 1)');
+                    }, 100);
+                }
+                
+            } else {
+                // INCORRECT SELECTION!
+                console.log(`Wrong! Expected ${expectedId}, got ${selectedId}. Resetting...`);
+                
+                // Flash Red
+                lockContainer.style.setProperty('--glow-color', 'rgba(255, 0, 0, 0.9)');
+                
+                // Wait 1.5 seconds, clear red glow, and reset the sequence to 0
+                setTimeout(() => {
+                    lockContainer.style.setProperty('--glow-color', 'transparent');
+                    resetSequence();
+                    isAnimating = false; // Allow clicks again
+                }, 1500);
+            }
+        }
+
+        // 4. Utility Functions
+        function resetSequence() {
+            currentStep = 0;
+            updateProgress();
+            
+            // Turn off all individual glow markers
+            document.querySelectorAll('.symbol-glow').forEach(el => {
+                el.classList.remove('active');
+            });
+            
+            // Pop the gemstone back out
+            gemstone.classList.remove('inserted');
+            gemstone.style.transform = ''; // Spin back to raw rotation
+            isGemstoneInserted = false;
+            progressEl.textContent = `Insert Gemstone`;
+        }
+
+        function updateProgress() {
+            progressEl.textContent = `Stage: ${currentStep} / ${NUM_REQUIRED_STEPS}`;
+        }
+
+        // Buttons and Toggles
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            resetSequence();
+            currentRotation = 0;
+            innerRing.style.transform = `rotate(0deg)`;
+            lockContainer.style.setProperty('--glow-color', 'transparent');
+            isAnimating = false;
+        });
+
+        debugCheckbox.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                lockContainer.classList.add('debug-mode-active');
+            } else {
+                lockContainer.classList.remove('debug-mode-active');
+            }
+            
+            const sectors = document.querySelectorAll('.sector');
+            sectors.forEach(s => {
+                if (e.target.checked) {
+                    s.classList.add('sector-debug');
+                } else {
+                    s.classList.remove('sector-debug');
+                }
+            });
+        });
+
+    </script>
+</body>
+</html>
